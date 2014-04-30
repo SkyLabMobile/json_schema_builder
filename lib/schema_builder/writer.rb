@@ -15,11 +15,11 @@ module SchemaBuilder
       out = {:new => [], :old => [] }
       create_out_path
       models_as_hash.each do |model|
-        file = File.join( out_path, "#{model['name']}.json")
+        file = File.join( out_path, "#{model['title'].underscore}.json")
+        FileUtils.mkdir_p(File.dirname(file)) unless File.exists?(File.dirname(file))
         if File.exist? file
           out[:old] << file
         else
-          FileUtils.mkdir_p(File.dirname(file))
           File.open( file, 'w+' ) {|f| f.write(JSON.pretty_generate(model)) }
           out[:new] << file
         end
@@ -33,30 +33,64 @@ module SchemaBuilder
       puts out[:new].join("\n")
     end
 
-    def models_as_hash
-      out = []
-      models.each do |model|
-        obj = schema_template
-        obj['name'] = model.name.underscore
-        obj['title'] = model.model_name.human
-        props = {}
-        model.columns_hash.each do |name, col|
+    def to_schema model
+      JSON.pretty_generate(to_schema_hash model)
+    end
+    def to_schema_hash model
+      obj = { '$schema' => 'http://json-schema.org/draft-04/schema#' }
+      prefix = model.name.tableize[/.*\//]
+      model.reflections.each do |name,assoc|
+        next if name == :versions
+        obj['$ref'] = "/#{prefix}#{assoc.plural_name}/new.schema#" if assoc.macro == :belongs_to
+      end
+      obj.merge schema_template
+      obj[:title] = model.name
+      obj[:description] = model.name.titleize.sub(/\//,' ')
+      props = {}
+      props[:ttt] = {std: [], all: [], ref: [], many: []}
+      model.columns_hash.each do |name, col|
+
+        unless name =~ /(.*)_id$/ && assoc = model.reflections[$1.to_sym]
+          props[:ttt][:std] << [name]
           prop = {}
-          prop['description'] = 'the field description'
-          prop['identity'] = true if col.primary
+          prop[:description] = name.titleize
+          prop[:identity] = true if col.primary
           set_readonly(name,prop)
           set_type(col.type, prop)
           set_format(col.type, prop)
-          prop['default'] = col.default if col.default
-          prop['maxlength'] = col.limit if col.type == :string && col.limit
-          props["#{name}"] = prop
+          prop[:default] = col.default if col.default
+          prop[:maxlength] = col.limit if col.type == :string && col.limit
+          props[name] = prop
+        else
+          props[:ttt][:all] << [name]
+          next if assoc.macro == :belongs_to
+          props[:ttt][:ref] << [name]
+          ref = { '$ref' => "/#{prefix}#{assoc.plural_name}/new.schema#" }
+          if assoc.macro == :has_many
+            props[:ttt][:many] << [name]
+            ref = {
+              type: "array",
+              format: "table",
+              title: name.camelize,
+              uniqueItems: true,
+              items: ref
+            }
+          end
+          props[$1.to_sym] = ref
         end
-        obj['properties'] = props
-        out << obj
-        #add links
-        if links = links_as_hash[model.name.tableize]
-          obj['links'] = links
-        end
+      end
+      obj[:properties] = props
+      #add links
+      if links = links_as_hash[model.name.tableize]
+        obj[:links] = links
+      end
+      obj
+    end
+
+    def models_as_hash
+      out = []
+      models.each do |model|
+        out << to_schema_hash(model)
       end # models
       out
     end
@@ -79,45 +113,44 @@ module SchemaBuilder
         skip_contrl = ['passwords', 'sessions', 'users', 'admin']
         skip_actions = ['edit', 'new']
         out = {}
+        routes ||= Rails.application.routes.routes.routes
         routes.collect do |route|  #Journey::Route object
           reqs = route.requirements
           next if reqs.empty? ||
-                  skip_contrl.detect{|c| reqs[:controller][c] } ||
-                  skip_actions.detect{|a| reqs[:action][a]}
+            skip_contrl.detect{|c| reqs[:controller][c] } ||
+            skip_actions.detect{|a| reqs[:action][a]}
 
           # setup links ary
           out[ reqs[:controller] ] = [] unless out[reqs[:controller]]
           # add actions as hash
           unless out[ reqs[:controller] ].detect{ |i| i[:rel] == reqs[:action] }
-            link = {:rel => reqs[:action],
-                    :method=> route.verb.source.gsub(/[$^]/, ''),
-                    :href => route.path.spec.to_s.gsub(/\(\.:format\)/, '').gsub(/:id/, '{id}')
-                    }
+            link = {
+              rel: reqs[:action],
+              method: route.verb.source.gsub(/[$^]/, ''),
+              hre: route.path.spec.to_s.gsub(/\(\.:format\)/, '').gsub(/:id/, '{id}')
+            }
             out[reqs[:controller]] << link
           end
-        end if routes
+        end
         out
       end
     end
 
     #@return [Hash{String=>Mixed}] base json schema object hash
     def schema_template
-      hsh = {}
-      hsh['type'] = 'object'
-      hsh['title'] = ''
-      hsh['description'] = 'object'
-      hsh['properties'] = {}
-      hsh['links'] = []
-      hsh
+      {
+        type: 'object',
+        title: '',
+        description: 'object',
+        properties: {},
+        links: [],
+      }
     end
 
     # @return [Array<Class>] classes(models) descending from ActiveRecord::Base
     def models
-      Dir.glob( model_path ).each { |file| require file }
-      model_names = Module.constants.select { |c| (eval "#{c}").is_a?(Class) && (eval "#{c}") < ::ActiveRecord::Base }
-      model_names.map{|i| "#{i}".constantize}
-      #::Rails.application.eager_load!
-      #ActiveRecord::Base.descendants
+      Rails.application.eager_load!
+      ActiveRecord::Base.descendants
     end
 
     def create_out_path
@@ -166,7 +199,7 @@ module SchemaBuilder
     # @param [Symbol] col_type derived from ActiveRecord model
     # @param [Hash{String=>String}] hsh with field properties
     def set_type(col_type, hsh)
-      hsh['type'] = if [:date, :datetime, :text].include?(col_type)
+      hsh[:type] = if [:date, :datetime, :text].include?(col_type)
                        'string'
                     elsif col_type == :decimal
                       'number'
@@ -180,9 +213,9 @@ module SchemaBuilder
     # @param [Hash{String=>String}] hsh with field properties
     def set_format(col_type, hsh)
       if col_type == :datetime
-        hsh['format'] = 'date-time'
+        hsh[:format] = 'date-time'
       elsif col_type == :date
-        hsh['format']= 'date'
+        hsh[:format]= 'date'
       end
     end
 
@@ -190,7 +223,7 @@ module SchemaBuilder
     # @param [String] col_name derived from ActiveRecord model
     # @param [Hash{String=>String}] hsh with field properties
     def set_readonly(col_name, hsh)
-      hsh['readonly'] = true if ['created_at', 'updated_at', 'id'].include?(col_name)
+      hsh[:readonly] = true if ['created_at', 'updated_at', 'id'].include?(col_name)
     end
   end
 end
