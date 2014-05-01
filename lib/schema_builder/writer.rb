@@ -42,16 +42,14 @@ module SchemaBuilder
       model.reflections.each do |name,assoc|
         next if name == :versions
         obj['$ref'] = "/#{prefix}#{assoc.plural_name}/new.schema#" if assoc.macro == :belongs_to
-      end
+      end if model.respond_to? :reflections
       obj.merge schema_template
       obj[:title] = model.name
       obj[:description] = model.name.titleize.sub(/\//,' ')
       props = {}
-      props[:ttt] = {std: [], all: [], ref: [], many: []}
       model.columns_hash.each do |name, col|
 
         unless name =~ /(.*)_id$/ && assoc = model.reflections[$1.to_sym]
-          props[:ttt][:std] << [name]
           prop = {}
           prop[:description] = name.titleize
           prop[:identity] = true if col.primary
@@ -62,23 +60,21 @@ module SchemaBuilder
           prop[:maxlength] = col.limit if col.type == :string && col.limit
           props[name] = prop
         else
-          props[:ttt][:all] << [name]
           next if assoc.macro == :belongs_to
-          props[:ttt][:ref] << [name]
           ref = { '$ref' => "/#{prefix}#{assoc.plural_name}/new.schema#" }
           if assoc.macro == :has_many
-            props[:ttt][:many] << [name]
+            (props[:many] ||= []) << [name]
             ref = {
-              type: "array",
-              format: "table",
-              title: name.camelize,
-              uniqueItems: true,
-              items: ref
+                type: "array",
+                format: "table",
+                title: name.camelize,
+                uniqueItems: true,
+                items: ref
             }
           end
           props[$1.to_sym] = ref
         end
-      end
+      end if model.respond_to? :columns_hash
       obj[:properties] = props
       #add links
       if links = links_as_hash[model.name.tableize]
@@ -117,17 +113,17 @@ module SchemaBuilder
         routes.collect do |route|  #Journey::Route object
           reqs = route.requirements
           next if reqs.empty? ||
-            skip_contrl.detect{|c| reqs[:controller][c] } ||
-            skip_actions.detect{|a| reqs[:action][a]}
+              skip_contrl.detect{|c| reqs[:controller][c] } ||
+              skip_actions.detect{|a| reqs[:action][a] if reqs[:action].is_a? Array }
 
           # setup links ary
           out[ reqs[:controller] ] = [] unless out[reqs[:controller]]
           # add actions as hash
           unless out[ reqs[:controller] ].detect{ |i| i[:rel] == reqs[:action] }
             link = {
-              rel: reqs[:action],
-              method: route.verb.source.gsub(/[$^]/, ''),
-              hre: route.path.spec.to_s.gsub(/\(\.:format\)/, '').gsub(/:id/, '{id}')
+                rel: reqs[:action],
+                method: route.verb.source.gsub(/[$^]/, ''),
+                href: route.path.spec.to_s.gsub(/\(\.:format\)/, '').gsub(/:id/, '{id}')
             }
             out[reqs[:controller]] << link
           end
@@ -139,11 +135,11 @@ module SchemaBuilder
     #@return [Hash{String=>Mixed}] base json schema object hash
     def schema_template
       {
-        type: 'object',
-        title: '',
-        description: 'object',
-        properties: {},
-        links: [],
+          type: 'object',
+          title: '',
+          description: 'object',
+          properties: {},
+          links: [],
       }
     end
 
@@ -200,12 +196,12 @@ module SchemaBuilder
     # @param [Hash{String=>String}] hsh with field properties
     def set_type(col_type, hsh)
       hsh[:type] = if [:date, :datetime, :text].include?(col_type)
-                       'string'
-                    elsif col_type == :decimal
-                      'number'
-                    else
-                      "#{col_type}"
-                    end
+                     'string'
+                   elsif col_type == :decimal
+                     'number'
+                   else
+                     "#{col_type}"
+                   end
     end
 
     # Set the format for a field property
