@@ -39,10 +39,6 @@ module SchemaBuilder
     def to_schema_hash model
       obj = { '$schema' => 'http://json-schema.org/draft-04/schema#' }
       prefix = model.name.tableize[/.*\//]
-      model.reflections.each do |name,assoc|
-        next if name == :versions
-        obj['$ref'] = "/#{prefix}#{assoc.plural_name}/new.schema#" if assoc.macro == :belongs_to
-      end if model.respond_to? :reflections
       obj.merge schema_template
       obj[:title] = model.name
       obj[:type] = 'object'
