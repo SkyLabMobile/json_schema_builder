@@ -197,12 +197,12 @@ module SchemaBuilder
     # @param [Hash{String=>String}] hsh with field properties
     def set_type(col_type, hsh)
       hsh[:type] = if [:date, :datetime, :text].include?(col_type)
-                     'string'
-                   elsif col_type == :decimal
-                     'number'
-                   else
-                     "#{col_type}"
-                   end
+       'string'
+      elsif col_type == :decimal
+       'number'
+      else
+       "#{col_type}"
+      end
     end
 
     # Set the format for a field property
