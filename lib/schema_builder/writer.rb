@@ -45,6 +45,7 @@ module SchemaBuilder
       end if model.respond_to? :reflections
       obj.merge schema_template
       obj[:title] = model.name
+      obj[:type] = 'object'
       obj[:description] = model.name.titleize.sub(/\//,' ')
       props = {}
       model.columns_hash.each do |name, col|
