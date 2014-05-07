@@ -15,7 +15,7 @@ module SchemaBuilder
       out = {:new => [], :old => [] }
       create_out_path
       models_as_hash.each do |model|
-        file = File.join( out_path, "#{model['title'].underscore}.json")
+        file = File.join( out_path, "#{model[:title].underscore}.json")
         FileUtils.mkdir_p(File.dirname(file)) unless File.exists?(File.dirname(file))
         if File.exist? file
           out[:old] << file
