@@ -236,7 +236,7 @@ module SchemaBuilder
     # @param [String] col_name derived from ActiveRecord model
     # @param [Hash{String=>String}] hsh with field properties
     def set_readonly(col_name, hsh)
-      hsh[:readonly] = true if ['created_at', 'updated_at', 'created_by', 'updated_by', 'id'].include?(col_name)
+      hsh[:readonly] = hsh[:disabled] = true if ['created_at', 'updated_at', 'created_by', 'updated_by', 'id'].include?(col_name)
     end
   end
 end
