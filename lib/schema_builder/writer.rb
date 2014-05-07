@@ -58,6 +58,7 @@ module SchemaBuilder
         props[name] = prop
       end if model.respond_to? :reflections
       model.columns_hash.each do |name, col|
+        next if name.to_s =~ /.*_id$/
         prop = {}
         prop[:title] = name
         prop[:description] = name.to_s.titleize
