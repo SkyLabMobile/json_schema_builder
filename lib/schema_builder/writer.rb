@@ -74,7 +74,7 @@ module SchemaBuilder
         props[name] = prop
       end if model.respond_to? :columns_hash
       model.reflections.reject {|k,v| v.macro == :belongs_to || excludes.include?(k) }.each do |name, assoc|
-        ref = Rails.application.routes.url_helpers.send "new_#{assoc.klass.name.underscore.sub(/\//,'_')}_path"
+        ref = ref_path assoc
         if assoc.macro == :has_many
           prop = {
               title: name,
@@ -196,6 +196,11 @@ module SchemaBuilder
 
     private
 
+    def ref_path assoc
+      Rails.application.routes.url_helpers.send "new_#{assoc.klass.name.underscore.sub(/\//,'_')}_path"
+    rescue
+      '/not_found'
+    end
     # Set the type of the field property
     # JSON Schema types
     # - string
