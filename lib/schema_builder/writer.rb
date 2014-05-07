@@ -64,7 +64,7 @@ module SchemaBuilder
       model.columns_hash.each do |name, col|
         prop = {}
         prop[:title] = name
-        prop[:description] = name.titleize
+        prop[:description] = name.to_s.titleize
         prop[:identity] = true if col.primary
         set_readonly(name,prop)
         set_type(col.type, prop)
@@ -78,7 +78,7 @@ module SchemaBuilder
         if assoc.macro == :has_many
           prop = {
               title: name,
-              description:  name.titleize,
+              description:  name.to_s.titleize,
               type: 'array',
               items: { "$ref" => "#{ref}.schema" }
           }
