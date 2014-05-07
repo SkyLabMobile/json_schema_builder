@@ -48,34 +48,45 @@ module SchemaBuilder
       obj[:type] = 'object'
       obj[:description] = model.name.titleize.sub(/\//,' ')
       props = {}
+      excludes = [:versions]
+      model.reflections.select {|k,v| v.macro == :belongs_to && !excludes.include?(k) }.each do |name, assoc|
+        ref = ref_path assoc
+        prop = {
+          title: name,
+          description:  name.to_s.titleize,
+          type: 'object',
+          oneOf: [
+            { "$ref" => "#{ref}.schema" }
+          ]
+        }
+        props[name] = prop
+      end if model.respond_to? :reflections
       model.columns_hash.each do |name, col|
-
-        unless name =~ /(.*)_id$/ && assoc = model.reflections[$1.to_sym]
-          prop = {}
-          prop[:description] = name.titleize
-          prop[:identity] = true if col.primary
-          set_readonly(name,prop)
-          set_type(col.type, prop)
-          set_format(col.type, prop)
-          prop[:default] = col.default if col.default
-          prop[:maxlength] = col.limit if col.type == :string && col.limit
-          props[name] = prop
-        else
-          next if assoc.macro == :belongs_to
-          ref = { '$ref' => "/#{prefix}#{assoc.plural_name}/new.schema#" }
-          if assoc.macro == :has_many
-            (props[:many] ||= []) << [name]
-            ref = {
-                type: "array",
-                format: "table",
-                title: name.camelize,
-                uniqueItems: true,
-                items: ref
-            }
-          end
-          props[$1.to_sym] = ref
-        end
+        prop = {}
+        prop[:title] = name
+        prop[:description] = name.titleize
+        prop[:identity] = true if col.primary
+        set_readonly(name,prop)
+        set_type(col.type, prop)
+        set_format(col.type, prop)
+        prop[:default] = col.default if col.default
+        prop[:maxlength] = col.limit if col.type == :string && col.limit
+        props[name] = prop
       end if model.respond_to? :columns_hash
+      model.reflections.reject {|k,v| v.macro == :belongs_to || excludes.include?(k) }.each do |name, assoc|
+        ref = Rails.application.routes.url_helpers.send "new_#{assoc.klass.name.underscore.sub(/\//,'_')}_path"
+        if assoc.macro == :has_many
+          prop = {
+              title: name,
+              description:  name.titleize,
+              type: 'array',
+              items: { "$ref" => "#{ref}.schema" }
+          }
+        else
+          prop = { "$ref" => "#{ref}.schema" }
+        end
+        props[name] = prop
+      end if model.respond_to? :reflections
       obj[:properties] = props
       #add links
       if links = links_as_hash[model.name.tableize]
